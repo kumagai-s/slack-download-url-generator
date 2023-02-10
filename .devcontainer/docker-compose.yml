@@ -1,19 +1,21 @@
 version: "3"
 
 services:
-  app:
-    container_name: uploader-v2-app
+  go:
+    container_name: uploader-v2-go
     build:
       context: ..
       dockerfile: .devcontainer/Dockerfile
     volumes:
       - ..:/workspace
-      - go_modules:/go/pkg
+      - go_modules:$HOME/go/pkg
     ports:
       - 8080:8080
     tty: true
     environment:
       - GO111MODULE=on
+      - GOMODCACHE=/home/vscode/go/pkg/mod
+      - GOPATH=/home/vscode/go
     working_dir: /workspace
 
   minio:

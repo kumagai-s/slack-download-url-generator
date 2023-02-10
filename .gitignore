@@ -16,3 +16,5 @@ go.work
 
 # Go air output file
 /tmp
+
+.DS_Store

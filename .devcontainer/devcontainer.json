@@ -1,7 +1,7 @@
 {
 	"name": "uploader-v2",
 	"dockerComposeFile": "docker-compose.yml",
-	"service": "app",
+	"service": "go",
 	"workspaceFolder": "/workspace",
 	"customizations": {
 		"vscode": {
