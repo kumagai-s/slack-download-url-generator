@@ -4,10 +4,10 @@ services:
   go:
     container_name: uploader-v2-go
     build:
-      context: ..
-      dockerfile: .devcontainer/Dockerfile
+      context: ./go
+      dockerfile: Dockerfile
     volumes:
-      - ..:/workspace
+      - .:/workspace:cached
       - go_modules:$HOME/go/pkg
     ports:
       - 8080:8080
@@ -16,7 +16,7 @@ services:
       - GO111MODULE=on
       - GOMODCACHE=/home/vscode/go/pkg/mod
       - GOPATH=/home/vscode/go
-    working_dir: /workspace
+    command: air -c /workspace/.air.toml
 
   minio:
     container_name: uploader-v2-minio
@@ -30,6 +30,14 @@ services:
       - MINIO_ROOT_USER=root
       - MINIO_ROOT_PASSWORD=password
     command: minio server /data --console-address :9001
+
+  terraform:
+    container_name: uploader-v2-terraform
+    build:
+      context: ./terraform
+      dockerfile: Dockerfile
+    volumes:
+      - .:/workspace
 
 volumes:
   go_modules:

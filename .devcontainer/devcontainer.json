@@ -1,6 +1,8 @@
 {
 	"name": "uploader-v2",
-	"dockerComposeFile": "docker-compose.yml",
+	"dockerComposeFile": [
+		"../docker-compose.yml"
+	],
 	"service": "go",
 	"workspaceFolder": "/workspace",
 	"customizations": {
