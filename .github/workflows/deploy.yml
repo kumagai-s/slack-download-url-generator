@@ -35,4 +35,4 @@ jobs:
       - name: lambda update
         run: |
           cd go && zip -r package.zip ./*
-          aws lambda update-function-code --function-name test-http --zip-file fileb://package.zip --publish
+          aws lambda update-function-code --function-name slack-download-url-generator-prod-app --zip-file fileb://package.zip --publish
