@@ -2,12 +2,11 @@ version: "3"
 
 services:
   go:
-    container_name: uploader-v2-go
     build:
-      context: ./go
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./go/Dockerfile
     volumes:
-      - .:/workspace:cached
+      - ./go:/workspace:cached
       - go_modules:$HOME/go/pkg
     ports:
       - 8080:8080
@@ -18,27 +17,13 @@ services:
       - GOPATH=/home/vscode/go
     command: air -c /workspace/.air.toml
 
-  minio:
-    container_name: uploader-v2-minio
-    image: minio/minio:latest
-    volumes:
-      - minio:/data
-    ports:
-      - 9000:9000
-      - 9001:9001
-    environment:
-      - MINIO_ROOT_USER=root
-      - MINIO_ROOT_PASSWORD=password
-    command: minio server /data --console-address :9001
-
-  terraform:
-    container_name: uploader-v2-terraform
-    build:
-      context: ./terraform
-      dockerfile: Dockerfile
-    volumes:
-      - .:/workspace
+  # terraform:
+  #   container_name: slack-download-url-generator-terraform
+  #   build:
+  #     context: ./terraform
+  #     dockerfile: Dockerfile
+  #   volumes:
+  #     - .:/workspace
 
 volumes:
   go_modules:
-  minio:
