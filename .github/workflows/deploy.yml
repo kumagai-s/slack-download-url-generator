@@ -28,7 +28,24 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
       - run: aws sts get-caller-identity
 
-      - name: lambda update
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.19
+
+      - name: Lambda update function configuration
         run: |
-          cd go && zip -r package.zip ./*
-          aws lambda update-function-code --function-name slack-download-url-generator-prod-app --zip-file fileb://package.zip --publish
+          aws lambda update-function-configuration --function-name my-function \
+            --environment "Variables={ \
+              SLACK_OAUTH_TOKEN=${{ secrets.SLACK_OAUTH_TOKEN }}, \
+              SLACK_SIGHNG_SECRET=${{ secrets.SLACK_SIGHNG_SECRET }}, \
+              S3_URL=${{ secrets.S3_URL }}, \
+              S3_REGION=${{ secrets.S3_REGION }}, \
+              S3_BUCKET=${{ secrets.S3_BUCKET }} \
+            }"
+        
+      - name: Lambda update function
+        run: |
+          cd go && GOOS=linux go build -o main main.go
+          zip -r function.zip ./main
+          aws lambda update-function-code --function-name slack-download-url-generator-prod-app --zip-file fileb://function.zip --publish

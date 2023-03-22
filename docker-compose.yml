@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: ./go/Dockerfile
     volumes:
-      - ./go:/workspace:cached
+      - .:/workspace:cached
       - go_modules:$HOME/go/pkg
     ports:
       - 8080:8080
@@ -15,7 +15,6 @@ services:
       - GO111MODULE=on
       - GOMODCACHE=/home/vscode/go/pkg/mod
       - GOPATH=/home/vscode/go
-    command: air -c /workspace/.air.toml
 
   # terraform:
   #   container_name: slack-download-url-generator-terraform
