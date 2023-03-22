@@ -29,13 +29,10 @@ var (
 func init() {
 	slackClient = slack.New(os.Getenv("SLACK_OAUTH_TOKEN"))
 
-	customResolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
-		return aws.Endpoint{
-			PartitionID:   "aws",
-			SigningRegion: os.Getenv("S3_REGION"),
-		}, nil
-	})
-	sdkconfig, _ := config.LoadDefaultConfig(context.TODO(), config.WithEndpointResolver(customResolver))
+	sdkconfig, err := config.LoadDefaultConfig(context.TODO())
+	if err != nil {
+		log.Println("初期設定中にエラーが発生しました。", err)
+	}
 	s3Client = s3.NewFromConfig(sdkconfig, func(o *s3.Options) {
 		o.UsePathStyle = true
 	})
