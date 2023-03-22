@@ -1,12 +1,10 @@
 name: AWS Lambda Deploy 
 on:
-  pull_request:
-    paths:
-      - 'go/**'
+  push:
     branches:
       - main
-    types:
-      - closed
+    paths:
+      - 'go/**'
 
   workflow_dispatch:
 
