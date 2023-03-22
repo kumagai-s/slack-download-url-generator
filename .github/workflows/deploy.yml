@@ -35,7 +35,7 @@ jobs:
 
       - name: Lambda update function configuration
         run: |
-          aws lambda update-function-configuration --function-name my-function \
+          aws lambda update-function-configuration --function-name slack-download-url-generator-prod-app \
             --environment "Variables={ \
               SLACK_OAUTH_TOKEN=${{ secrets.SLACK_OAUTH_TOKEN }}, \
               SLACK_SIGHNG_SECRET=${{ secrets.SLACK_SIGHNG_SECRET }}, \
