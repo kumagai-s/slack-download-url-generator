@@ -32,7 +32,6 @@ func init() {
 	customResolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
 		return aws.Endpoint{
 			PartitionID:   "aws",
-			URL:           os.Getenv("S3_URL"),
 			SigningRegion: os.Getenv("S3_REGION"),
 		}, nil
 	})

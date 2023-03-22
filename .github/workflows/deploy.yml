@@ -39,7 +39,6 @@ jobs:
             --environment "Variables={ \
               SLACK_OAUTH_TOKEN=${{ secrets.SLACK_OAUTH_TOKEN }}, \
               SLACK_SIGHNG_SECRET=${{ secrets.SLACK_SIGHNG_SECRET }}, \
-              S3_URL=${{ secrets.S3_URL }}, \
               S3_REGION=${{ secrets.S3_REGION }}, \
               S3_BUCKET=${{ secrets.S3_BUCKET }} \
             }"
