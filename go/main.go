@@ -39,7 +39,11 @@ func init() {
 	s3PresignClient = s3.NewPresignClient(s3Client)
 }
 
-type SlackAppMentionEventFiles struct {
+type SlackAppMentionEventRequest struct {
+	Event SlackAppMentionEvent `json:"event"`
+}
+
+type SlackAppMentionEvent struct {
 	Files []SlackAppMentionEventFile `json:"files"`
 }
 
@@ -100,14 +104,13 @@ func lambdaHandler(r events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		innerEvent := eventsAPIEvent.InnerEvent
 		switch ev := innerEvent.Data.(type) {
 		case *slackevents.AppMentionEvent:
-			var files *SlackAppMentionEventFiles
-			if err := json.Unmarshal([]byte(innerEvent.Data.(string)), &files); err != nil {
-				log.Println(innerEvent.Data.(string))
+			var req *SlackAppMentionEventRequest
+			if err := json.Unmarshal([]byte(body), &req); err != nil {
 				log.Println("リクエストの解析中にエラーが発生しました。", err)
 				return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
 			}
 
-			for _, file := range files.Files {
+			for _, file := range req.Event.Files {
 				url := file.URLPrivateDownload
 
 				// Slackからファイルを取得する。
