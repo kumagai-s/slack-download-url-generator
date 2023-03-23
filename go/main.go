@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -38,6 +37,16 @@ func init() {
 	})
 
 	s3PresignClient = s3.NewPresignClient(s3Client)
+}
+
+type SlackAppMentionEventFiles struct {
+	Files []SlackAppMentionEventFile `json:"files"`
+}
+
+type SlackAppMentionEventFile struct {
+	ID                 string `json:"id"`
+	Name               string `json:"name"`
+	URLPrivateDownload string `json:"url_private_download"`
 }
 
 func lambdaHandler(r events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
@@ -91,22 +100,14 @@ func lambdaHandler(r events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		innerEvent := eventsAPIEvent.InnerEvent
 		switch ev := innerEvent.Data.(type) {
 		case *slackevents.AppMentionEvent:
-			tsFrom, _ := strconv.ParseInt(ev.TimeStamp, 10, 64)
-			tsTo, _ := strconv.ParseInt(ev.EventTimeStamp, 10, 64)
-
-			// Slackからファイル情報を取得する。
-			files, _, err := slackClient.GetFiles(slack.GetFilesParameters{
-				User:          ev.User,
-				Channel:       ev.Channel,
-				TimestampFrom: slack.JSONTime(tsFrom),
-				TimestampTo:   slack.JSONTime(tsTo),
-			})
-			if err != nil {
-				log.Println("Slackからファイル情報を取得中にエラーが発生しました。", err)
-				return events.APIGatewayProxyResponse{StatusCode: 400, Body: "Bad Request"}, err
+			var files *SlackAppMentionEventFiles
+			if err := json.Unmarshal([]byte(innerEvent.Data.(string)), &files); err != nil {
+				log.Println(innerEvent.Data.(string))
+				log.Println("リクエストの解析中にエラーが発生しました。", err)
+				return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
 			}
 
-			for _, file := range files {
+			for _, file := range files.Files {
 				url := file.URLPrivateDownload
 
 				// Slackからファイルを取得する。
