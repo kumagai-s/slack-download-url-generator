@@ -117,7 +117,7 @@ func lambdaHandler(r events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 				}
 				defer res.Body.Close()
 
-				file, err := ioutil.ReadAll(res.Body)
+				f, err := ioutil.ReadAll(res.Body)
 				if err != nil {
 					log.Println("Slackからファイルを取得中にエラーが発生しました。", err)
 					continue
@@ -129,7 +129,7 @@ func lambdaHandler(r events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 				if _, err := s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
 					Bucket:      aws.String(os.Getenv("S3_BUCKET")),
 					Key:         aws.String(filename),
-					Body:        bytes.NewReader(file),
+					Body:        bytes.NewReader(f),
 					ContentType: aws.String("application/zip"),
 				}); err != nil {
 					log.Println("ファイルをS3にアップロード中にエラーが発生しました。", err)
@@ -146,6 +146,11 @@ func lambdaHandler(r events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 				if err != nil {
 					log.Println("署名付きURLを生成中にエラーが発生しました。", err)
 					continue
+				}
+
+				// Slackからファイルを削除する。
+				if err := slackClient.DeleteFile(file.ID); err != nil {
+					log.Println("ファイルの削除中にエラーが発生しました。", err)
 				}
 
 				// Slackにメッセージを送信する。
