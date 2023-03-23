@@ -35,10 +35,10 @@ jobs:
         run: |
           aws lambda update-function-configuration --function-name slack-download-url-generator-prod-app \
             --environment "Variables={ \
-              S3_BUCKET=${{ secrets.S3_BUCKET }} \
+              S3_BUCKET=${{ secrets.S3_BUCKET }}, \
               SLACK_BOT_OAUTH_TOKEN=${{ secrets.SLACK_BOT_OAUTH_TOKEN }}, \
               SLACK_SIGHNG_SECRET=${{ secrets.SLACK_SIGHNG_SECRET }}, \
-              SLACK_USER_OAUTH_TOKEN=${{ secrets.SLACK_USER_OAUTH_TOKEN }}, \
+              SLACK_USER_OAUTH_TOKEN=${{ secrets.SLACK_USER_OAUTH_TOKEN }} \
             }"
         
       - name: Lambda update function
