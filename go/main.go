@@ -20,13 +20,15 @@ import (
 )
 
 var (
-	slackClient     *slack.Client
-	s3Client        *s3.Client
-	s3PresignClient *s3.PresignClient
+	slackClientAsBot  *slack.Client
+	slackClientAsUser *slack.Client
+	s3Client          *s3.Client
+	s3PresignClient   *s3.PresignClient
 )
 
 func init() {
-	slackClient = slack.New(os.Getenv("SLACK_OAUTH_TOKEN"))
+	slackClientAsBot = slack.New(os.Getenv("SLACK_BOT_OAUTH_TOKEN"))
+	slackClientAsUser = slack.New(os.Getenv("SLACK_USER_OAUTH_TOKEN"))
 
 	sdkconfig, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
@@ -153,12 +155,12 @@ func lambdaHandler(r events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 				}
 
 				// Slackからファイルを削除する。
-				if err := slackClient.DeleteFile(file.ID); err != nil {
-					log.Println("ファイルの削除中にエラーが発生しました。", err)
+				if err := slackClientAsUser.DeleteFile(file.ID); err != nil {
+					log.Println("Slackからファイルを削除中にエラーが発生しました。", err)
 				}
 
 				// Slackにメッセージを送信する。
-				if _, _, err := slackClient.PostMessage(
+				if _, _, err := slackClientAsBot.PostMessage(
 					ev.Channel,
 					slack.MsgOptionText(pr.URL, false),
 					slack.MsgOptionTS(ev.TimeStamp),
