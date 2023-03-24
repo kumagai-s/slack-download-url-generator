@@ -55,6 +55,142 @@ type SlackAppMentionEventFile struct {
 	URLPrivateDownload string `json:"url_private_download"`
 }
 
+// verifyRequest は、SlackAPIからのリクエストが正当なものかどうかを検証します。
+// 検証にはシークレットキーを使用し、正当性を確認します。
+// headers: SlackAPIから受信したリクエストヘッダー
+// body: SlackAPIから受信したリクエストボディ
+// エラーがなければnilを返し、検証に失敗した場合はエラーを返します。
+func verifyRequest(headers map[string]string, body string) error {
+	signingSecret := os.Getenv("SLACK_SIGHNG_SECRET")
+	header := http.Header{}
+	for key, value := range headers {
+		header.Set(key, value)
+	}
+	sv, err := slack.NewSecretsVerifier(header, signingSecret)
+	if err != nil {
+		return err
+	}
+	if _, err := sv.Write([]byte(body)); err != nil {
+		return err
+	}
+	if err := sv.Ensure(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// handleURLVerification は、Slack APIからのURL検証リクエストを処理します。
+// body: SlackAPIから受信したリクエストボディ
+// URL検証リクエストが正常に処理された場合、APIGatewayProxyResponseとnilのエラーを返します。
+// エラーが発生した場合、適切なAPIGatewayProxyResponseとエラーを返します。
+func handleURLVerification(body string) (events.APIGatewayProxyResponse, error) {
+	var cr *slackevents.ChallengeResponse
+	if err := json.Unmarshal([]byte(body), &cr); err != nil {
+		log.Println("SlackAPIからのURL検証用中にエラーが発生しました。", err)
+		return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
+	}
+	return events.APIGatewayProxyResponse{StatusCode: 200, Body: cr.Challenge}, nil
+}
+
+// uploadFileToS3AndGetPresignedURL は、Slackから取得したファイルをS3にアップロードし、
+// 署名付きURLを生成して返します。
+// file: アップロードするSlackファイルオブジェクトへのポインタ
+// 成功時には署名付きURLの文字列とnilのエラーを返します。
+// エラーが発生した場合、空文字列とエラーを返します。
+func uploadFileToS3AndGetPresignedURL(file *SlackAppMentionEventFile) (string, error) {
+	// Slackからファイルを取得する。
+	res, err := http.Get(file.URLPrivateDownload)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+
+	f, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return "", err
+	}
+
+	filename := time.Now().Format("20060102150405") + ".zip"
+
+	// ファイルをS3にアップロードする。
+	if _, err := s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
+		Bucket:      aws.String(os.Getenv("S3_BUCKET")),
+		Key:         aws.String(filename),
+		Body:        bytes.NewReader(f),
+		ContentType: aws.String("application/zip"),
+	}); err != nil {
+		return "", err
+	}
+
+	// 署名付きURLを生成する。
+	pr, err := s3PresignClient.PresignGetObject(context.TODO(), &s3.GetObjectInput{
+		Bucket: aws.String(os.Getenv("S3_BUCKET")),
+		Key:    aws.String(filename),
+	}, func(opts *s3.PresignOptions) {
+		opts.Expires = time.Duration(60 * 3 * int64(time.Second))
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return pr.URL, nil
+}
+
+// sendErrorToSlack は、エラーメッセージをSlackのチャンネルに送信します。
+// ev: AppMentionEventオブジェクトへのポインタ。エラーが発生したイベント情報を含む。
+// 関数はエラーの送信成功時と失敗時の両方で、何も返しません。
+func sendErrorToSlack(ev *slackevents.AppMentionEvent) {
+	errorMessage := "エラーが発生しました。処理を完了できませんでした。"
+	if _, _, err := slackClientAsBot.PostMessage(
+		ev.Channel,
+		slack.MsgOptionText(errorMessage, false),
+		slack.MsgOptionTS(ev.TimeStamp),
+	); err != nil {
+		log.Println("エラーメッセージをSlackに送信中にエラーが発生しました。", err)
+	}
+}
+
+// handleAppMentionEvent は、AppMentionイベントを処理します。
+// この関数は、SlackファイルをS3にアップロードし、署名付きURLを生成してSlackチャンネルに送信します。
+// 最後に、アップロードされたファイルをSlackから削除します。
+// ev: AppMentionイベントへのポインタ。イベント情報を含む。
+// body: SlackAPIから受信したリクエストボディ
+// AppMentionイベントが正常に処理された場合、APIGatewayProxyResponseとnilのエラーを返します。
+// エラーが発生した場合、エラーメッセージをSlackチャンネルに送信し、適切なAPIGatewayProxyResponseとエラーを返します。
+func handleAppMentionEvent(ev *slackevents.AppMentionEvent, body string) (events.APIGatewayProxyResponse, error) {
+	var req *SlackAppMentionEventRequest
+	if err := json.Unmarshal([]byte(body), &req); err != nil {
+		sendErrorToSlack(ev)
+		return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
+	}
+
+	for _, file := range req.Event.Files {
+		presignedURL, err := uploadFileToS3AndGetPresignedURL(&file)
+		if err != nil {
+			log.Println("ファイルのアップロードと署名付きURLの生成中にエラーが発生しました。", err)
+			sendErrorToSlack(ev)
+			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
+		}
+
+		// Slackからファイルを削除する。
+		if err := slackClientAsUser.DeleteFile(file.ID); err != nil {
+			log.Println("Slackからファイルを削除中にエラーが発生しました。", err)
+		}
+
+		// Slackにメッセージを送信する。
+		if _, _, err := slackClientAsBot.PostMessage(
+			ev.Channel,
+			slack.MsgOptionText(presignedURL, false),
+			slack.MsgOptionTS(ev.TimeStamp),
+		); err != nil {
+			log.Println("Slackにメッセージを送信中にエラーが発生しました。", err)
+			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
+		}
+	}
+
+	return events.APIGatewayProxyResponse{StatusCode: 200, Body: "OK"}, nil
+}
+
 func lambdaHandler(r events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	body := r.Body
 	headers := r.Headers
@@ -67,21 +203,8 @@ func lambdaHandler(r events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	}
 
 	// SlackAPIのシークレットキーを用いて検証する。
-	signingSecret := os.Getenv("SLACK_SIGHNG_SECRET")
-	header := http.Header{}
-	for key, value := range headers {
-		header.Set(key, value)
-	}
-	sv, err := slack.NewSecretsVerifier(header, signingSecret)
-	if err != nil {
-		log.Println("検証中にエラーが発生しました。", err)
-		return events.APIGatewayProxyResponse{StatusCode: 400, Body: "Bad Request"}, err
-	}
-	if _, err := sv.Write([]byte(body)); err != nil {
-		log.Println("検証中にエラーが発生しました。", err)
-		return events.APIGatewayProxyResponse{StatusCode: 400, Body: "Bad Request"}, err
-	}
-	if err := sv.Ensure(); err != nil {
+	if err := verifyRequest(headers, body); err != nil {
+		log.Println("リクエストの検証中にエラーが発生しました。", err)
 		return events.APIGatewayProxyResponse{StatusCode: 401, Body: "Unauthorized"}, err
 	}
 
@@ -91,88 +214,21 @@ func lambdaHandler(r events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
 	}
 
-	// SlackAPIのURL検証用
+	// SlackAPIのURL検証イベントを処理する。
 	if eventsAPIEvent.Type == slackevents.URLVerification {
-		var cr *slackevents.ChallengeResponse
-		if err := json.Unmarshal([]byte(body), &cr); err != nil {
-			log.Println("SlackAPIからのURL検証用中にエラーが発生しました。", err)
-			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
-		}
-		return events.APIGatewayProxyResponse{StatusCode: 200, Body: cr.Challenge}, nil
+		return handleURLVerification(body)
 	}
 
-	// メイン処理
+	// SlackAPIのコールバックイベント処理する。
 	if eventsAPIEvent.Type == slackevents.CallbackEvent {
 		innerEvent := eventsAPIEvent.InnerEvent
 		switch ev := innerEvent.Data.(type) {
 		case *slackevents.AppMentionEvent:
-			var req *SlackAppMentionEventRequest
-			if err := json.Unmarshal([]byte(body), &req); err != nil {
-				log.Println("リクエストの解析中にエラーが発生しました。", err)
-				return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
-			}
-
-			for _, file := range req.Event.Files {
-				url := file.URLPrivateDownload
-
-				// Slackからファイルを取得する。
-				res, err := http.Get(url)
-				if err != nil {
-					log.Println("Slackからファイルを取得中にエラーが発生しました。", err)
-					continue
-				}
-				defer res.Body.Close()
-
-				f, err := ioutil.ReadAll(res.Body)
-				if err != nil {
-					log.Println("Slackからファイルを取得中にエラーが発生しました。", err)
-					continue
-				}
-
-				filename := time.Now().Format("20060102150405") + ".zip"
-
-				// ファイルをS3にアップロードする。
-				if _, err := s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
-					Bucket:      aws.String(os.Getenv("S3_BUCKET")),
-					Key:         aws.String(filename),
-					Body:        bytes.NewReader(f),
-					ContentType: aws.String("application/zip"),
-				}); err != nil {
-					log.Println("ファイルをS3にアップロード中にエラーが発生しました。", err)
-					continue
-				}
-
-				// 署名付きURLを生成する。
-				pr, err := s3PresignClient.PresignGetObject(context.TODO(), &s3.GetObjectInput{
-					Bucket: aws.String(os.Getenv("S3_BUCKET")),
-					Key:    aws.String(filename),
-				}, func(opts *s3.PresignOptions) {
-					opts.Expires = time.Duration(60 * 3 * int64(time.Second))
-				})
-				if err != nil {
-					log.Println("署名付きURLを生成中にエラーが発生しました。", err)
-					continue
-				}
-
-				// Slackからファイルを削除する。
-				if err := slackClientAsUser.DeleteFile(file.ID); err != nil {
-					log.Println("Slackからファイルを削除中にエラーが発生しました。", err)
-				}
-
-				// Slackにメッセージを送信する。
-				if _, _, err := slackClientAsBot.PostMessage(
-					ev.Channel,
-					slack.MsgOptionText(pr.URL, false),
-					slack.MsgOptionTS(ev.TimeStamp),
-				); err != nil {
-					log.Println("Slackにメッセージを送信中にエラーが発生しました。", err)
-					continue
-				}
-			}
+			return handleAppMentionEvent(ev, body)
 		}
 	}
 
-	return events.APIGatewayProxyResponse{StatusCode: 200, Body: "OK"}, nil
+	return events.APIGatewayProxyResponse{StatusCode: 400, Body: "Bad Request"}, nil
 }
 
 func main() {
