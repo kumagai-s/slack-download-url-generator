@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -136,11 +139,27 @@ func uploadFileToS3AndGetPresignedURL(file *SlackAppMentionEventFile) (string, e
 	return pr.URL, nil
 }
 
+// validateFile は、指定された SlackAppMentionEventFile が以下の条件を満たすか確認します。
+// ・ファイルが zip 形式であること
+// ・ファイル名が半角英数字であること
+// 条件を満たさない場合はエラーを返します。
+func validateFile(file *SlackAppMentionEventFile) error {
+	isValidName := regexp.MustCompile(`^[a-zA-Z0-9]+$`).MatchString
+	if !isValidName(file.Name[:len(file.Name)-4]) {
+		return errors.New("ファイル名は「半角英数字」にしてください。")
+	}
+
+	if !strings.HasSuffix(file.Name, ".zip") {
+		return errors.New("ファイルは「zip」形式にしてください。")
+	}
+
+	return nil
+}
+
 // sendErrorToSlack は、エラーメッセージをSlackのチャンネルに送信します。
 // ev: AppMentionEventオブジェクトへのポインタ。エラーが発生したイベント情報を含む。
 // 関数はエラーの送信成功時と失敗時の両方で、何も返しません。
-func sendErrorToSlack(ev *slackevents.AppMentionEvent) {
-	errorMessage := "エラーが発生しました。処理を完了できませんでした。"
+func sendErrorToSlack(ev *slackevents.AppMentionEvent, errorMessage string) {
 	if _, _, err := slackClientAsBot.PostMessage(
 		ev.Channel,
 		slack.MsgOptionText(errorMessage, false),
@@ -160,15 +179,20 @@ func sendErrorToSlack(ev *slackevents.AppMentionEvent) {
 func handleAppMentionEvent(ev *slackevents.AppMentionEvent, body string) (events.APIGatewayProxyResponse, error) {
 	var req *SlackAppMentionEventRequest
 	if err := json.Unmarshal([]byte(body), &req); err != nil {
-		sendErrorToSlack(ev)
+		sendErrorToSlack(ev, "エラーが発生しました。処理を完了できませんでした。")
 		return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
 	}
 
 	for _, file := range req.Event.Files {
+		if err := validateFile(&file); err != nil {
+			sendErrorToSlack(ev, err.Error())
+			return events.APIGatewayProxyResponse{StatusCode: 400, Body: "Bad Request"}, err
+		}
+
 		presignedURL, err := uploadFileToS3AndGetPresignedURL(&file)
 		if err != nil {
 			log.Println("ファイルのアップロードと署名付きURLの生成中にエラーが発生しました。", err)
-			sendErrorToSlack(ev)
+			sendErrorToSlack(ev, "エラーが発生しました。処理を完了できませんでした。")
 			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
 		}
 
