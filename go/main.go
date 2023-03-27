@@ -1,7 +1,6 @@
 package main
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -132,7 +131,6 @@ func uploadFileToS3AndGetPresignedURL(file *SlackAppMentionEventFile) (string, e
 // validateFile は、指定された SlackAppMentionEventFile が以下の条件を満たすか確認します。
 // ・ファイルが zip 形式であること
 // ・ファイル名が半角英数字であること
-// ・ファイルにパスワードが設定されていること
 // 条件を満たさない場合はエラーを返します。
 func validateFile(file *SlackAppMentionEventFile) error {
 	isValidName := regexp.MustCompile(`^[a-zA-Z0-9]+$`).MatchString
@@ -142,21 +140,6 @@ func validateFile(file *SlackAppMentionEventFile) error {
 
 	if !strings.HasSuffix(file.Name, ".zip") {
 		return errors.New("ファイルは「zip」形式にしてください。")
-	}
-
-	reader, err := zip.NewReader(bytes.NewReader(file.Binary), int64(len(file.Binary)))
-	if err != nil {
-		log.Println("zipファイルの解析中にエラーが発生しました。", err)
-		return errors.New("zipファイルの解析中にエラーが発生しました。")
-	}
-
-	for _, f := range reader.File {
-		if f.Flags == 0 {
-			continue
-		}
-		if f.Flags&0x01 == 0 {
-			return errors.New("zipファイルにパスワードを設定してください。")
-		}
 	}
 
 	return nil
