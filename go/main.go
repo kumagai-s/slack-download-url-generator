@@ -146,6 +146,7 @@ func validateFile(file *SlackAppMentionEventFile) error {
 
 	reader, err := zip.NewReader(bytes.NewReader(file.Binary), int64(len(file.Binary)))
 	if err != nil {
+		log.Println("zipファイルの解析中にエラーが発生しました。", err)
 		return errors.New("zipファイルの解析中にエラーが発生しました。")
 	}
 
