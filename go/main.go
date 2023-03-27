@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -56,6 +57,7 @@ type SlackAppMentionEventFile struct {
 	ID                 string `json:"id"`
 	Name               string `json:"name"`
 	URLPrivateDownload string `json:"url_private_download"`
+	Binary             []byte // Slackからファイルを取得した際、取得したファイルのバイナリデータが格納されます。
 }
 
 // verifyRequest は、SlackAPIからのリクエストが正当なものかどうかを検証します。
@@ -101,25 +103,13 @@ func handleURLVerification(body string) (events.APIGatewayProxyResponse, error) 
 // 成功時には署名付きURLの文字列とnilのエラーを返します。
 // エラーが発生した場合、空文字列とエラーを返します。
 func uploadFileToS3AndGetPresignedURL(file *SlackAppMentionEventFile) (string, error) {
-	// Slackからファイルを取得する。
-	res, err := http.Get(file.URLPrivateDownload)
-	if err != nil {
-		return "", err
-	}
-	defer res.Body.Close()
-
-	f, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return "", err
-	}
-
 	filename := time.Now().Format("20060102150405") + ".zip"
 
 	// ファイルをS3にアップロードする。
 	if _, err := s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
 		Bucket:      aws.String(os.Getenv("S3_BUCKET")),
 		Key:         aws.String(filename),
-		Body:        bytes.NewReader(f),
+		Body:        bytes.NewReader(file.Binary),
 		ContentType: aws.String("application/zip"),
 	}); err != nil {
 		return "", err
@@ -142,6 +132,7 @@ func uploadFileToS3AndGetPresignedURL(file *SlackAppMentionEventFile) (string, e
 // validateFile は、指定された SlackAppMentionEventFile が以下の条件を満たすか確認します。
 // ・ファイルが zip 形式であること
 // ・ファイル名が半角英数字であること
+// ・ファイルにパスワードが設定されていること
 // 条件を満たさない場合はエラーを返します。
 func validateFile(file *SlackAppMentionEventFile) error {
 	isValidName := regexp.MustCompile(`^[a-zA-Z0-9]+$`).MatchString
@@ -151,6 +142,20 @@ func validateFile(file *SlackAppMentionEventFile) error {
 
 	if !strings.HasSuffix(file.Name, ".zip") {
 		return errors.New("ファイルは「zip」形式にしてください。")
+	}
+
+	reader, err := zip.NewReader(bytes.NewReader(file.Binary), int64(len(file.Binary)))
+	if err != nil {
+		return errors.New("zipファイルの解析中にエラーが発生しました。")
+	}
+
+	for _, f := range reader.File {
+		if f.Flags == 0 {
+			continue
+		}
+		if f.Flags&0x01 == 0 {
+			return errors.New("zipファイルにパスワードを設定してください。")
+		}
 	}
 
 	return nil
@@ -184,6 +189,30 @@ func handleAppMentionEvent(ev *slackevents.AppMentionEvent, body string) (events
 	}
 
 	for _, file := range req.Event.Files {
+		// Slackからファイルを取得する。
+		res, err := http.Get(file.URLPrivateDownload)
+		if err != nil {
+			log.Println("Slackからファイルを取得中にエラーが発生しました。", err)
+			sendErrorToSlack(ev, "エラーが発生しました。処理を完了できませんでした。")
+			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
+		}
+		defer res.Body.Close()
+
+		fileBinary, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			log.Println("Slackから取得したファイルを解析中にエラーが発生しました。", err)
+			sendErrorToSlack(ev, "エラーが発生しました。処理を完了できませんでした。")
+			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
+		}
+		file.Binary = fileBinary
+
+		// Slackからファイルを削除する。
+		if err := slackClientAsUser.DeleteFile(file.ID); err != nil {
+			log.Println("Slackからファイルを削除中にエラーが発生しました。", err)
+			sendErrorToSlack(ev, "エラーが発生しました。処理を完了できませんでした。")
+			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
+		}
+
 		if err := validateFile(&file); err != nil {
 			sendErrorToSlack(ev, err.Error())
 			return events.APIGatewayProxyResponse{StatusCode: 400, Body: "Bad Request"}, err
@@ -194,11 +223,6 @@ func handleAppMentionEvent(ev *slackevents.AppMentionEvent, body string) (events
 			log.Println("ファイルのアップロードと署名付きURLの生成中にエラーが発生しました。", err)
 			sendErrorToSlack(ev, "エラーが発生しました。処理を完了できませんでした。")
 			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
-		}
-
-		// Slackからファイルを削除する。
-		if err := slackClientAsUser.DeleteFile(file.ID); err != nil {
-			log.Println("Slackからファイルを削除中にエラーが発生しました。", err)
 		}
 
 		// Slackにメッセージを送信する。
