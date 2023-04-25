@@ -103,7 +103,7 @@ func handleURLVerification(body string) (events.APIGatewayProxyResponse, error) 
 // 成功時には署名付きURLの文字列とnilのエラーを返します。
 // エラーが発生した場合、空文字列とエラーを返します。
 func uploadFileToS3AndGetPresignedURL(file *SlackAppMentionEventFile) (string, error) {
-	filename := time.Now().Format("20060102150405") + ".zip"
+	filename := file.Name + ".zip"
 
 	// ファイルをS3にアップロードする。
 	if _, err := s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
