@@ -8,9 +8,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
-
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/apigateway"
 )
 
 type RequestBody struct {
@@ -28,13 +25,7 @@ type URLShortener interface {
 type urlShortener struct {
 }
 
-func (u *urlShortener) Shorten(url string) (string, error) {
-	cfg, err := config.LoadDefaultConfig(context.TODO())
-	if err != nil {
-		return "", fmt.Errorf("unable to load SDK config, %s", err)
-	}
-
-	client := apigateway.NewFromConfig(cfg)
+func (r *urlShortener) Shorten(url string) (string, error) {
 	endpoint := os.Getenv("URL_SHORTENER_URL")
 	method := "POST"
 
@@ -52,7 +43,8 @@ func (u *urlShortener) Shorten(url string) (string, error) {
 	}
 	request.Header.Set("Content-Type", "application/json")
 
-	response, err := client.HTTPClient.Do(request)
+	client := &http.Client{}
+	response, err := client.Do(request)
 	if err != nil {
 		return "", fmt.Errorf("unable to send request, %s", err)
 	}
