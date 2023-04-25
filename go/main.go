@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/kumagai-s/uploader-v2/lib/urlshortener"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 )
@@ -87,13 +88,13 @@ func verifyRequest(headers map[string]string, body string) error {
 // body: SlackAPIから受信したリクエストボディ
 // URL検証リクエストが正常に処理された場合、APIGatewayProxyResponseとnilのエラーを返します。
 // エラーが発生した場合、適切なAPIGatewayProxyResponseとエラーを返します。
-func handleURLVerification(body string) (events.APIGatewayProxyResponse, error) {
+func handleURLVerification(body string) events.APIGatewayProxyResponse {
 	var cr *slackevents.ChallengeResponse
 	if err := json.Unmarshal([]byte(body), &cr); err != nil {
 		log.Println("SlackAPIからのURL検証用中にエラーが発生しました。", err)
-		return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
+		return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}
 	}
-	return events.APIGatewayProxyResponse{StatusCode: 200, Body: cr.Challenge}, nil
+	return events.APIGatewayProxyResponse{StatusCode: 200, Body: cr.Challenge}
 }
 
 // uploadFileToS3AndGetPresignedURL は、Slackから取得したファイルをS3にアップロードし、
@@ -165,11 +166,11 @@ func sendErrorToSlack(ev *slackevents.AppMentionEvent, errorMessage string) {
 // body: SlackAPIから受信したリクエストボディ
 // AppMentionイベントが正常に処理された場合、APIGatewayProxyResponseとnilのエラーを返します。
 // エラーが発生した場合、エラーメッセージをSlackチャンネルに送信し、適切なAPIGatewayProxyResponseとエラーを返します。
-func handleAppMentionEvent(ev *slackevents.AppMentionEvent, body string) (events.APIGatewayProxyResponse, error) {
+func handleAppMentionEvent(ev *slackevents.AppMentionEvent, body string) events.APIGatewayProxyResponse {
 	var req *SlackAppMentionEventRequest
 	if err := json.Unmarshal([]byte(body), &req); err != nil {
 		sendErrorToSlack(ev, "エラーが発生しました。処理を完了できませんでした。")
-		return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
+		return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}
 	}
 
 	for _, file := range req.Event.Files {
@@ -178,7 +179,7 @@ func handleAppMentionEvent(ev *slackevents.AppMentionEvent, body string) (events
 		if err != nil {
 			log.Println("Slackからファイルを取得中にエラーが発生しました。", err)
 			sendErrorToSlack(ev, "エラーが発生しました。処理を完了できませんでした。")
-			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
+			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}
 		}
 		defer res.Body.Close()
 
@@ -186,7 +187,7 @@ func handleAppMentionEvent(ev *slackevents.AppMentionEvent, body string) (events
 		if err != nil {
 			log.Println("Slackから取得したファイルを解析中にエラーが発生しました。", err)
 			sendErrorToSlack(ev, "エラーが発生しました。処理を完了できませんでした。")
-			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
+			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}
 		}
 		file.Binary = fileBinary
 
@@ -194,36 +195,45 @@ func handleAppMentionEvent(ev *slackevents.AppMentionEvent, body string) (events
 		if err := slackClientAsUser.DeleteFile(file.ID); err != nil {
 			log.Println("Slackからファイルを削除中にエラーが発生しました。", err)
 			sendErrorToSlack(ev, "エラーが発生しました。処理を完了できませんでした。")
-			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
+			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}
 		}
 
 		if err := validateFile(&file); err != nil {
 			sendErrorToSlack(ev, err.Error())
-			return events.APIGatewayProxyResponse{StatusCode: 400, Body: "Bad Request"}, err
+			return events.APIGatewayProxyResponse{StatusCode: 400, Body: "Bad Request"}
 		}
 
 		presignedURL, err := uploadFileToS3AndGetPresignedURL(&file)
 		if err != nil {
 			log.Println("ファイルのアップロードと署名付きURLの生成中にエラーが発生しました。", err)
 			sendErrorToSlack(ev, "エラーが発生しました。処理を完了できませんでした。")
-			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
+			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}
+		}
+
+		urlShortener := urlshortener.NewURLShortener()
+
+		shortURL, err := urlShortener.Shorten(presignedURL)
+		if err != nil {
+			log.Println("URLの短縮中にエラーが発生しました。", err)
+			sendErrorToSlack(ev, "URLの短縮中にエラーが発生しました。処理を完了できませんでした。")
+			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}
 		}
 
 		// Slackにメッセージを送信する。
 		if _, _, err := slackClientAsBot.PostMessage(
 			ev.Channel,
-			slack.MsgOptionText(presignedURL, false),
+			slack.MsgOptionText(shortURL, false),
 			slack.MsgOptionTS(ev.TimeStamp),
 		); err != nil {
 			log.Println("Slackにメッセージを送信中にエラーが発生しました。", err)
-			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
+			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}
 		}
 	}
 
-	return events.APIGatewayProxyResponse{StatusCode: 200, Body: "OK"}, nil
+	return events.APIGatewayProxyResponse{StatusCode: 200, Body: "OK"}
 }
 
-func lambdaHandler(r events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func lambdaHandler(r events.APIGatewayProxyRequest) events.APIGatewayProxyResponse {
 	body := r.Body
 	headers := r.Headers
 	log.Println("リクエストヘッダー", headers)
@@ -231,19 +241,19 @@ func lambdaHandler(r events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 
 	// Slackのリトライリクエストは無視する。
 	if headers["X-Slack-Retry-Num"] != "" {
-		return events.APIGatewayProxyResponse{StatusCode: 200, Body: "No need retry"}, nil
+		return events.APIGatewayProxyResponse{StatusCode: 200, Body: "No need retry"}
 	}
 
 	// SlackAPIのシークレットキーを用いて検証する。
 	if err := verifyRequest(headers, body); err != nil {
 		log.Println("リクエストの検証中にエラーが発生しました。", err)
-		return events.APIGatewayProxyResponse{StatusCode: 401, Body: "Unauthorized"}, err
+		return events.APIGatewayProxyResponse{StatusCode: 401, Body: "Unauthorized"}
 	}
 
 	eventsAPIEvent, err := slackevents.ParseEvent(json.RawMessage(body), slackevents.OptionNoVerifyToken())
 	if err != nil {
 		log.Println("リクエストの解析中にエラーが発生しました。", err)
-		return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
+		return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}
 	}
 
 	// SlackAPIのURL検証イベントを処理する。
@@ -260,7 +270,7 @@ func lambdaHandler(r events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		}
 	}
 
-	return events.APIGatewayProxyResponse{StatusCode: 400, Body: "Bad Request"}, nil
+	return events.APIGatewayProxyResponse{StatusCode: 400, Body: "Bad Request"}
 }
 
 func main() {
