@@ -39,6 +39,7 @@ jobs:
               SLACK_BOT_OAUTH_TOKEN=${{ secrets.SLACK_BOT_OAUTH_TOKEN }}, \
               SLACK_SIGHNG_SECRET=${{ secrets.SLACK_SIGHNG_SECRET }}, \
               SLACK_USER_OAUTH_TOKEN=${{ secrets.SLACK_USER_OAUTH_TOKEN }} \
+              URL_SHORTENER_URL=${{ secrets.URL_SHORTENER_URL }} \
             }"
         
       - name: Lambda update function

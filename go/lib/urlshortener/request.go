@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/apigateway"
@@ -34,7 +35,7 @@ func (u *urlShortener) Shorten(url string) (string, error) {
 	}
 
 	client := apigateway.NewFromConfig(cfg)
-	endpoint := "https://example.com/prod/main"
+	endpoint := os.Getenv("URL_SHORTENER_URL")
 	method := "POST"
 
 	requestBody := RequestBody{
