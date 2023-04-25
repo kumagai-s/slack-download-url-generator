@@ -15,7 +15,7 @@ type RequestBody struct {
 }
 
 type ResponseBody struct {
-	URL string `json:"url"`
+	URL string `json:"shortened_url"`
 }
 
 type URLShortener interface {
