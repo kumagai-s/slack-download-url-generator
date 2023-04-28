@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -174,21 +173,15 @@ func handleAppMentionEvent(ev *slackevents.AppMentionEvent, body string) (events
 
 	for _, file := range req.Event.Files {
 		// Slackからファイルを取得する。
-		res, err := http.Get(file.URLPrivateDownload)
-		if err != nil {
+		var buf bytes.Buffer
+
+		if err := slackClientAsBot.GetFile(file.URLPrivateDownload, &buf); err != nil {
 			log.Println("Slackからファイルを取得中にエラーが発生しました。", err)
 			sendErrorToSlack(ev, "エラーが発生しました。処理を完了できませんでした。")
 			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
 		}
-		defer res.Body.Close()
 
-		fileBinary, err := ioutil.ReadAll(res.Body)
-		if err != nil {
-			log.Println("Slackから取得したファイルを解析中にエラーが発生しました。", err)
-			sendErrorToSlack(ev, "エラーが発生しました。処理を完了できませんでした。")
-			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Internal Server Error"}, err
-		}
-		file.Binary = fileBinary
+		file.Binary = buf.Bytes()
 
 		// Slackからファイルを削除する。
 		if err := slackClientAsUser.DeleteFile(file.ID); err != nil {
