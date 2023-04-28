@@ -42,6 +42,7 @@ func (r *urlShortener) Shorten(url string) (string, error) {
 		return "", fmt.Errorf("unable to create new request, %s", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("x-api-key", os.Getenv("URL_SHORTENER_API_KEY"))
 
 	client := &http.Client{}
 	response, err := client.Do(request)
