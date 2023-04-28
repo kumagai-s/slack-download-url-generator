@@ -109,7 +109,7 @@ func uploadFileToS3AndGetPresignedURL(file *SlackAppMentionEventFile) (string, e
 		Bucket:      aws.String(os.Getenv("S3_BUCKET")),
 		Key:         aws.String(filename),
 		Body:        bytes.NewReader(file.Binary),
-		ContentType: aws.String("application/zip"),
+		ContentType: aws.String("application/pdf"),
 	}); err != nil {
 		return "", err
 	}
