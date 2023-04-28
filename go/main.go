@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -101,14 +102,12 @@ func handleURLVerification(body string) (events.APIGatewayProxyResponse, error) 
 // 成功時には署名付きURLの文字列とnilのエラーを返します。
 // エラーが発生した場合、空文字列とエラーを返します。
 func uploadFileToS3AndGetPresignedURL(file *SlackAppMentionEventFile) (string, error) {
-	filename := file.Name
-
 	// ファイルをS3にアップロードする。
 	if _, err := s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
 		Bucket:      aws.String(os.Getenv("S3_BUCKET")),
-		Key:         aws.String(filename),
+		Key:         aws.String(file.Name),
 		Body:        bytes.NewReader(file.Binary),
-		ContentType: aws.String("application/pdf"),
+		ContentType: aws.String("application/zip"),
 	}); err != nil {
 		return "", err
 	}
@@ -116,7 +115,7 @@ func uploadFileToS3AndGetPresignedURL(file *SlackAppMentionEventFile) (string, e
 	// 署名付きURLを生成する。
 	pr, err := s3PresignClient.PresignGetObject(context.TODO(), &s3.GetObjectInput{
 		Bucket: aws.String(os.Getenv("S3_BUCKET")),
-		Key:    aws.String(filename),
+		Key:    aws.String(file.Name),
 	}, func(opts *s3.PresignOptions) {
 		opts.Expires = time.Duration(60 * 3 * int64(time.Second))
 	})
@@ -137,9 +136,9 @@ func validateFile(file *SlackAppMentionEventFile) error {
 		return errors.New("ファイル名は「半角英数字」にしてください。")
 	}
 
-	// if !strings.HasSuffix(file.Name, ".zip") {
-	// 	return errors.New("ファイルは「zip」形式にしてください。")
-	// }
+	if !strings.HasSuffix(file.Name, ".zip") {
+		return errors.New("ファイルは「zip」形式にしてください。")
+	}
 
 	return nil
 }
