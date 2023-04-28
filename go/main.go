@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -134,14 +133,14 @@ func uploadFileToS3AndGetPresignedURL(file *SlackAppMentionEventFile) (string, e
 // ・ファイル名が半角英数字であること
 // 条件を満たさない場合はエラーを返します。
 func validateFile(file *SlackAppMentionEventFile) error {
-	isValidName := regexp.MustCompile(`^[a-zA-Z0-9]+$`).MatchString
+	isValidName := regexp.MustCompile(`^[a-zA-Z0-9_-]+$`).MatchString
 	if !isValidName(file.Name[:len(file.Name)-4]) {
 		return errors.New("ファイル名は「半角英数字」にしてください。")
 	}
 
-	if !strings.HasSuffix(file.Name, ".zip") {
-		return errors.New("ファイルは「zip」形式にしてください。")
-	}
+	// if !strings.HasSuffix(file.Name, ".zip") {
+	// 	return errors.New("ファイルは「zip」形式にしてください。")
+	// }
 
 	return nil
 }
