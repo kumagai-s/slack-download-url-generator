@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/kumagai-s/uploader-v2/lib/urlshortener"
 	"github.com/slack-go/slack"
@@ -33,7 +34,13 @@ func init() {
 	slackClientAsBot = slack.New(os.Getenv("SLACK_BOT_OAUTH_TOKEN"))
 	slackClientAsUser = slack.New(os.Getenv("SLACK_USER_OAUTH_TOKEN"))
 
-	sdkconfig, err := config.LoadDefaultConfig(context.TODO())
+	cred := aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(
+		os.Getenv("AWS_ACCESS_KEY_ID"),
+		os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		"",
+	))
+
+	sdkconfig, err := config.LoadDefaultConfig(context.TODO(), config.WithCredentialsProvider(cred))
 	if err != nil {
 		log.Println("初期設定中にエラーが発生しました。", err)
 	}

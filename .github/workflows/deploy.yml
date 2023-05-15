@@ -35,6 +35,8 @@ jobs:
         run: |
           aws lambda update-function-configuration --function-name slack-download-url-generator-prod-app \
             --environment "Variables={ \
+              AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}, \
+              AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}, \
               S3_BUCKET=${{ secrets.S3_BUCKET }}, \
               SLACK_BOT_OAUTH_TOKEN=${{ secrets.SLACK_BOT_OAUTH_TOKEN }}, \
               SLACK_SIGHNG_SECRET=${{ secrets.SLACK_SIGHNG_SECRET }}, \
