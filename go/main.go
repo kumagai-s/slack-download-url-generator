@@ -35,8 +35,8 @@ func init() {
 	slackClientAsUser = slack.New(os.Getenv("SLACK_USER_OAUTH_TOKEN"))
 
 	cred := aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(
-		os.Getenv("AWS_ACCESS_KEY_ID"),
-		os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		os.Getenv("AWS_ACCESS_KEY_ID_FOR_S3"),
+		os.Getenv("AWS_SECRET_ACCESS_KEY_FOR_S3"),
 		"",
 	))
 
