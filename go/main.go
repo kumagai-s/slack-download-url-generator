@@ -117,7 +117,7 @@ func uploadFileToS3AndGetPresignedURL(file *SlackAppMentionEventFile) (string, e
 		Bucket: aws.String(os.Getenv("S3_BUCKET")),
 		Key:    aws.String(file.Name),
 	}, func(opts *s3.PresignOptions) {
-		opts.Expires = time.Duration(60 * 3 * int64(time.Second))
+		opts.Expires = time.Duration(60 * 60 * 24 * 7 * int64(time.Second))
 	})
 	if err != nil {
 		return "", err
